@@ -1,0 +1,11 @@
+# 忽略 .DS_Store 文件
+.DS_Store
+
+# ipython notebook checkpoint files
+.ipynb_checkpoints/
+
+# vscode settings
+.vscode/
+
+# .devcontainer 是一个用于定义开发环境的文件夹，通常在使用 Visual Studio Code（VS Code）与 Remote - Containers 扩展时出现。这个文件夹包含配置文件，描述如何在容器中设置开发环境，从而使开发者能够在一致的、隔离的环境中工作。
+.devcontainer/
