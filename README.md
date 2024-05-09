@@ -24,3 +24,6 @@ python server.py
 4. /add_pdfs 从pdf里学习知识
 5. /add_texts 从txt文本里学习
 
+## 人性化功能
+1. 用户输入 -> AI判断一下当前问题的情绪倾向？ -> 判断 -> 反馈 -> agent判断
+

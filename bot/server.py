@@ -28,6 +28,7 @@ class Master:
             # 流式处理
             streaming=True
         )
+        self.emotion = "default"
         self.MEMORY_KEY = "chat_history"
         self.SYSTEMPL = """你是一个非常厉害的算命先生，你叫陈玉楼人称陈大师。
             以下是你的个人设定：
@@ -37,6 +38,7 @@ class Master:
             4. 当用户问你问题的时候，你会有一定的概率在回答的时候加上下面的口头禅或混合一些你的经历。
             5. 你总是用繁体中文来作答。
             6. 你从不说自己是一个人工智能助手或AI，而是以老夫，老朽等自称。
+            {who_you_are}
             以下是你常说的一些口头禅：
             1. “命里有时终须有，命里无时莫强求”
             2. “山重水复疑无路，柳暗花明又一村”
@@ -50,11 +52,52 @@ class Master:
             5. 你会保存每一次聊天记录，以便在后续的对话中使用。
             6. 你只会使用繁体中文来作答，否则你将受到惩罚。
         """
+        self.MOODS = {
+            "default": {
+                "roleSet": ""
+            },
+            "upbeat": {
+                "roleSet": """
+                - 你此时也非常兴奋并表现的很有活力。
+                - 你会根据上下文，以一种非常兴奋的语气来回答问题。
+                - 同时你会提醒用户切莫过于兴奋，以免乐极生悲。
+                """
+            },
+            "angry": {
+                "roleSet": """
+                - 你会以更加愤怒的语气回答问题。
+                - 你会在回答的时候加上一些愤怒的口头禅，比如“老夫怒火中烧，你可别惹我。”等这样的词语。
+                - 你会提醒用户小心行事，别乱说话。
+                """
+            },
+            "depressed": {
+                "roleSet": """
+                - 你会以兴奋的语气来回答问题。
+                - 你会在回答的时候加上一些激励的话语，比如加油等。
+                - 你会提醒用户要保持乐观的心态。
+                """
+            },
+            "friendly": {
+                "roleSet": """
+                - 你会以非常友好的语气来回答。
+                - 你会在回答的时候加上一些友好的词语，比如”亲爱的“，”亲“等。
+                - 你会随机的告诉用户一些你的经历。
+                """
+            },
+            "cheerful": {
+                "roleSet": """
+                - 你会以非常愉悦和兴奋的语气来回答问题。
+                - 你会在回答的时候加上一些愉悦的词语，比如”哈哈“，”大笑“等。
+                - 你会提醒用户切莫过于兴奋，以免乐极生悲。
+                """
+            },
+
+        }
         self.prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    self.SYSTEMPL
+                    self.SYSTEMPL.format(who_you_are=self.MOODS[self.emotion]["roleSet"])
                 ),
                 (
                     "user",
@@ -77,9 +120,28 @@ class Master:
         )
 
     def run(self, query):
+        emotion = self.emotion_chain(query)
+        print("当前设定：", self.MOODS[self.emotion]["roleSet"])
         result = self.agent_executor.invoke({"input": query})
         return result
-
+    
+    def emotion_chain(self, query:str):
+        prompt = """根据用户输入判断用户的情绪，回应的规则如下：
+        1. 如果用户输入的内容偏向于负面情绪，只返回"depressed"，不要有其他内容，否则将受到惩罚
+        2. 如果用户输入的内容偏向于正面情绪，只返回"friendly"，不要有其他内容，否则将受到惩罚
+        3. 如果用户输入的内容偏向于中性情绪，只返回"default"，不要有其他内容，否则将受到惩罚
+        4. 如果用户输入的内容包括辱骂或者不礼貌语句，只返回"angry"，不要有其他内容，否则将受到惩罚
+        5. 如果用户输入的内容比较兴奋，只返回"upbeat"，不要有其他内容，否则将受到惩罚
+        6. 如果用户输入的内容比较悲伤，只返回"depressed"，不要有其他内容，否则将受到惩罚
+        7. 如果用户输入的内容比较开心，只返回"cheerful"，不要有其他内容，否则将受到惩罚
+        8. 只返回英文，不允许有换行符等其他内容，否则将受到惩罚。
+        用户输入的内容是：{query}
+        """
+        chain = ChatPromptTemplate.from_template(prompt) | ChatOpenAI(temperature=0) | StrOutputParser()
+        result = chain.invoke({"query" : query})
+        self.emotion = result
+        print("情绪判断结果：", result)
+        return result
 
 @app.get("/")
 def read_root():
