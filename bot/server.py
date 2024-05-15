@@ -1,29 +1,30 @@
-from doctest import master
-from email.errors import MessageParseError
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_openai_tools_agent, AgentExecutor, tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.schema import StrOutputParser
+from langchain_community.chat_message_histories import RedisChatMessageHistory
+from langchain.memory import ConversationTokenBufferMemory
 import os
+from BotTools import *
 
-from zmq import Message
+with open('./config.json', 'r') as f:
+    config = json.load(f)
 
-app = FastAPI()
+os.environ["OPENAI_API_KEY"] = config["OPENAI_API_KEY"]
+os.environ["OPENAI_API_BASE"] = config["OPENAI_API_BASE"]
 
-os.environ["OPENAI_API_KEY"] = "sk-sWo0SNwz7Zrt0ATm246851735c7e4eD19330E4E5Be9bE56c"
-os.environ["OPENAI_API_BASE"] = "https://ai-yyds.com/v1"
+os.environ['SERPAPI_API_KEY'] = config["SERPAPI_API_KEY"]
 
+REDIS_URL = config["REDIS_URL"]
 
-@tool
-def test():
-    """Test tool"""
-    return "test"
+app = FastAPI() 
+
 
 class Master:
     def __init__(self):
         self.chatmodel = ChatOpenAI(
-            model="gpt-3.5-turbo",
+            model="gpt-4-turbo",
             temperature=0,
             # 流式处理
             streaming=True
@@ -99,6 +100,7 @@ class Master:
                     "system",
                     self.SYSTEMPL.format(who_you_are=self.MOODS[self.emotion]["roleSet"])
                 ),
+                MessagesPlaceholder(variable_name=self.MEMORY_KEY),
                 (
                     "user",
                     "{input}"
@@ -106,23 +108,64 @@ class Master:
                 MessagesPlaceholder(variable_name="agent_scratchpad")
             ]
         )
-        self.memory = ""
-        tools = [test]
+        self.memory = self.get_memory()
+        tools = [search, get_info_from_local_db, bazi_cesuan, yaoyigua, jiemeng]
         agent = create_openai_tools_agent(
             self.chatmodel,
             tools=tools,
-            prompt=self.prompt
+            prompt=self.prompt,
+
+        )
+        memory = ConversationTokenBufferMemory(
+            llm = self.chatmodel,
+            human_prefix="用户",
+            ai_prefix="陈大师",
+            memory_key=self.MEMORY_KEY,  # memory_key 是一个关键字，用于在某个存储或上下文中标识这个特定的记忆对象。
+            output_key="output",    # output_key 指定输出数据的关键字。
+            return_messages=True,    # return_messages 指定是否在方法调用后返回消息
+            max_token_limit=1000,    # max_token_limit 设定了记忆缓冲区中的最大令牌数（token），控制可记忆的数据量。
+            chat_memory=self.memory  # chat_memory 参数传递现有的聊天记忆，是先前初始化的或正在使用的记忆对象。
         )
         self.agent_executor = AgentExecutor(
             agent=agent,
             tools=tools,
+            memory=memory,
             verbose=True
         )
+
+    def get_memory(self):
+        chat_message_history = RedisChatMessageHistory(
+            url=REDIS_URL, session_id="session"
+        )
+        # chat_message_history.clear() 清空历史记录
+        print("chat_message_history： " , chat_message_history.messages)
+        store_message = chat_message_history.messages
+        print(len(store_message))
+        if len(store_message) > 10:
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        self.SYSTEMPL + "\n这是一段你和用户的对话记录，对其进行总结摘要，摘要使用第一人称‘我’，并且提取其中的用户关键信息，如姓名，性别，出生日期等，以如下格式返回:\n 总结摘要内容 | 用户关键信息\n 例如 用户张三问候我，我礼貌回复，然后他问我今年运势如何，我回答了他今年的运势情况，然后他告辞离开。 | 张三，生日1999年1月1日"
+                    ),
+                    (
+                        "user",
+                        "{input}"
+                    )
+                ]
+            )
+            chain = prompt | self.chatmodel
+            summary = chain.invoke({"input":store_message, "who_you_are":self.MOODS[self.emotion]["roleSet"]})
+            print("summary: ", summary)
+            chat_message_history.clear()
+            chat_message_history.add_message(summary)
+            print("总结后：", chat_message_history.messages)
+        return chat_message_history
 
     def run(self, query):
         emotion = self.emotion_chain(query)
         print("当前设定：", self.MOODS[self.emotion]["roleSet"])
-        result = self.agent_executor.invoke({"input": query})
+        result = self.agent_executor.invoke({"input": query, "chat_history": self.memory.messages})
         return result
     
     def emotion_chain(self, query:str):
