@@ -34,13 +34,13 @@ def search(query:str):
 
 @tool
 def get_info_from_local_db(query:str):
-    """只有回答与2024年运势或者龙年运势相关的问题时，会使用这个工具，必须输入用户的生日。"""
+    """只有回答与2024年运势或者龙年运势相关的问题时，会使用这个工具。"""
     # 导入 Qdrant 客户端并初始化，指定数据存储的路径和模型
     client = Qdrant(
         QdrantClient(path="./local_qdrand"),
         "local_documents",
         # 向量引擎
-        OpenAIEmbeddings(model="text-embedding-3-small")
+        OpenAIEmbeddings()
     )
     # 将客户端配置为检索器，使用最大边际相关性（MMR）作为搜索类型
     retriever = client.as_retriever(search_type="mmr")

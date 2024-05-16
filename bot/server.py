@@ -5,8 +5,14 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.schema import StrOutputParser
 from langchain_community.chat_message_histories import RedisChatMessageHistory
 from langchain.memory import ConversationTokenBufferMemory
+from langchain_community.document_loaders import WebBaseLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
 from BotTools import *
+from langchain_community.vectorstores import qdrant
+from qdrant_client import QdrantClient
+
+
 
 with open('./config.json', 'r') as f:
     config = json.load(f)
@@ -196,8 +202,28 @@ def chat(query:str):
     return master.run(query)
 
 @app.post("/add_ursl")
-def add_ursl():
-    return {"response": "URLs added successfully"}
+def add_ursl(URL:str):
+    print("Processing URL:", URL)
+    try:
+        loader = WebBaseLoader(URL)
+        docs = loader.load()
+        documents = RecursiveCharacterTextSplitter(
+            chunk_size=800,
+            chunk_overlap=50
+        ).split_documents(docs)
+        # 引入向量数据库
+        print("add_ursl")
+        qdrant = Qdrant.from_documents(
+            documents,
+            OpenAIEmbeddings(),
+            path="./local_qdrand",
+            collection_name="local_documents"
+        )
+        print("向量数据库创建完成！")
+        return {"ok":"添加成功！"}
+    except Exception as e:
+        print("Error:", e)
+        return {"error": str(e)}
 
 @app.post("/add_pdfs")
 def add_pdfs():
