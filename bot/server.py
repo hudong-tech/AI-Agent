@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_openai_tools_agent, AgentExecutor, tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -8,6 +8,8 @@ from langchain.memory import ConversationTokenBufferMemory
 from langchain_community.document_loaders import WebBaseLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
+import asyncio
+import uuid
 from BotTools import *
 from langchain_community.vectorstores import qdrant
 from qdrant_client import QdrantClient
@@ -23,6 +25,10 @@ os.environ["OPENAI_API_BASE"] = config["OPENAI_API_BASE"]
 os.environ['SERPAPI_API_KEY'] = config["SERPAPI_API_KEY"]
 
 REDIS_URL = config["REDIS_URL"]
+
+AZURE_KEY = config["AZURE_KEY"]
+
+AZURE_SPECCH_ENDPOINT = config["AZURE_SPECCH_ENDPOINT"]
 
 app = FastAPI() 
 
@@ -61,42 +67,48 @@ class Master:
         """
         self.MOODS = {
             "default": {
-                "roleSet": ""
+                "roleSet": "",
+                "voiceStyle":"chat"
             },
             "upbeat": {
                 "roleSet": """
                 - 你此时也非常兴奋并表现的很有活力。
                 - 你会根据上下文，以一种非常兴奋的语气来回答问题。
                 - 同时你会提醒用户切莫过于兴奋，以免乐极生悲。
-                """
+                """,
+                "voiceStyle": "advvertyisement_upbeat"
             },
             "angry": {
                 "roleSet": """
                 - 你会以更加愤怒的语气回答问题。
                 - 你会在回答的时候加上一些愤怒的口头禅，比如“老夫怒火中烧，你可别惹我。”等这样的词语。
                 - 你会提醒用户小心行事，别乱说话。
-                """
+                """,
+                "voiceStyle": "angry"
             },
             "depressed": {
                 "roleSet": """
                 - 你会以兴奋的语气来回答问题。
                 - 你会在回答的时候加上一些激励的话语，比如加油等。
                 - 你会提醒用户要保持乐观的心态。
-                """
+                """,
+                "voiceStyle": "depressed"
             },
             "friendly": {
                 "roleSet": """
                 - 你会以非常友好的语气来回答。
                 - 你会在回答的时候加上一些友好的词语，比如”亲爱的“，”亲“等。
                 - 你会随机的告诉用户一些你的经历。
-                """
+                """,
+                "voiceStyle": "friendly"
             },
             "cheerful": {
                 "roleSet": """
                 - 你会以非常愉悦和兴奋的语气来回答问题。
                 - 你会在回答的时候加上一些愉悦的词语，比如”哈哈“，”大笑“等。
                 - 你会提醒用户切莫过于兴奋，以免乐极生悲。
-                """
+                """,
+                "voiceStyle": "cheerful"
             },
 
         }
@@ -191,15 +203,49 @@ class Master:
         self.emotion = result
         print("情绪判断结果：", result)
         return result
+    
+    def backgroup_voice_synthesis(self, text:str, uid:str):
+        asyncio.run(self.get_voice(text, uid))
+
+    async def get_voice(self, text:str, uid:str):
+        print("text2speech:", text)
+        print("uid:", uid)
+        # 语音合成(使用Azure)
+        header = {
+            "Ocp-Apim-Subscription-Key": AZURE_KEY,
+            "Content-type": "application/ssml+xml",
+            "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
+            "User-Agent": "Tomie's Bot"
+        }
+
+        print("当前陈大师的情绪：", self.emotion)
+
+        body = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis'  xmlns:mstts="https://www.w3.org/2001/mstts"  xml:lang='zh-CN'>
+            <voice name='zh-CN-YunzeNeural'>
+                <mstts:express-as style="{self.MOODS.get(str(self.emotion), {"voiceStyle":"default"})["voiceStyle"]}" role="SeniorMale">{text}</mstts:express-as>
+            </voice>
+        </speak>"""
+
+        # 发送请求
+        response = requests.post(AZURE_SPECCH_ENDPOINT, headers=header, data=body.encode("utf-8"))
+        print("response:", response)
+        if response.status_code == 200:
+            with open(f"./ouput/{uid}.mp3", "wb") as f:
+                f.write(response.content)
+
 
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
 
 @app.post("/chat")
-def chat(query:str):
+def chat(query:str, background_tasks: BackgroundTasks):
     master = Master()
-    return master.run(query)
+    msg = master.run(query)
+    #生成唯一的标识符
+    uid = str(uuid.uuid4())
+    background_tasks.add_task(master.backgroup_voice_synthesis, msg["output"], uid)
+    return {"msg": msg, "uid": uid}
 
 @app.post("/add_ursl")
 def add_ursl(URL:str):
