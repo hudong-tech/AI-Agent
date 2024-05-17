@@ -4,5 +4,5 @@
     "SERPAPI_API_KEY": "e6e84a5a2867ea9dcb68807b85348eda825624d4d4dbaa83201ab4da35f9db17",
     "YUANFENJU_API_KEY": "uTsQLiVYd9EoBPQ0QEgCtdibw",
     "REDIS_URL": "redis://47.99.80.124:16379/0",
-    "AZURE_KEY": ""
+    "AZURE_KEY": "1"
 }
