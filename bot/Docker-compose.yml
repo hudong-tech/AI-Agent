@@ -1,0 +1,17 @@
+version: '3'
+services:
+  redis-server:
+    image: 'redis:latest'
+    command: redis-server
+    # 数据卷：将容器内的数据持久化到宿主机上
+    volumes:
+      - redis_data:/data
+
+  ai-server:
+    build: ./
+    ports: "9000:9000"
+    environment:
+      - REDIS_URL=redis://redis-server:6379/0
+
+volumes:
+  redis_data:
