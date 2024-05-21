@@ -153,12 +153,12 @@ class Master:
 
     def get_memory(self):
         chat_message_history = RedisChatMessageHistory(
+            # session_id 要求是一个唯一的标识符，用于标识一个特定的会话。（使用telebot id）
             url=REDIS_URL, session_id="session"
         )
         # chat_message_history.clear() 清空历史记录
         print("chat_message_history： " , chat_message_history.messages)
         store_message = chat_message_history.messages
-        print(len(store_message))
         if len(store_message) > 10:
             prompt = ChatPromptTemplate.from_messages(
                 [
@@ -208,7 +208,8 @@ class Master:
         asyncio.run(self.get_voice(text, uid))
 
     async def get_voice(self, text:str, uid:str):
-        print("text2speech:", text)
+        text2speech = text.replace("**", "")
+        print("text2speech:", text2speech)
         print("uid:", uid)
         # 语音合成(使用Azure)
         header = {
@@ -222,7 +223,7 @@ class Master:
 
         body = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis'  xmlns:mstts="https://www.w3.org/2001/mstts"  xml:lang='zh-CN'>
             <voice name='zh-CN-YunzeNeural'>
-                <mstts:express-as style="{self.MOODS.get(str(self.emotion), {"voiceStyle":"default"})["voiceStyle"]}" role="SeniorMale">{text}</mstts:express-as>
+                <mstts:express-as style="{self.MOODS.get(str(self.emotion), {"voiceStyle":"default"})["voiceStyle"]}" role="SeniorMale">{text2speech}</mstts:express-as>
             </voice>
         </speak>"""
 
@@ -230,8 +231,10 @@ class Master:
         response = requests.post(AZURE_SPECCH_ENDPOINT, headers=header, data=body.encode("utf-8"))
         print("response:", response)
         if response.status_code == 200:
-            with open(f"./ouput/{uid}.mp3", "wb") as f:
+            with open(f"./output/{uid}.mp3", "wb") as f:
                 f.write(response.content)
+
+                
 
 
 @app.get("/")
