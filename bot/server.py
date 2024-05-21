@@ -19,6 +19,12 @@ from qdrant_client import QdrantClient
 with open('./config.json', 'r') as f:
     config = json.load(f)
 
+# https://smith.langchain.com/o/14401c67-34ed-5841-974b-b8da8b6d1185/
+# 链路追踪
+os.environ["LANGCHAIN_TRACING_V2"]="true"
+os.environ["LANGCHAIN_API_KEY"]= config["LANGCHAIN_API_KEY"]
+os.environ["LANGCHAIN_PROJECT"]="shensuanTest"
+
 os.environ["OPENAI_API_KEY"] = config["OPENAI_API_KEY"]
 os.environ["OPENAI_API_BASE"] = config["OPENAI_API_BASE"]
 
