@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>My avatar</title>
+    <style>
+        video {
+            background: #222;
+            margin: 0 0 20px 0;
+            --width: 100%;
+            width: var(--width);
+            height: calc(var(--width)*0.5);
+        }
+    </style>
+    <script
+        src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@latest/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js">
+        </script>
+
+</head>
+
+<body>
+    <script>
+        var SpeechSDK;
+        var peerConnection;
+        var cogSvcRegin = "eastus";
+        var subscriptionkey = "5b5c179f840f4249a7fa13230909d64c";
+
+        var speakerHandel = function (avatarSynthesizer, msg, emotion) {
+            var yinse = document.getElementById("voiceSelect").value;
+            var spokenSsml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='zh-CN'>
+                <voice name='${yinse}'>
+                    <mstts:express-as  style='${emotion}' role='YoungAdultFemale'  styledegree='2'>${msg}</mstts:express-as>
+                </voice>
+            </speak>`;
+            console.log("spokenSsml:" + spokenSsml)
+            // 异步地从SSML（语音合成标记语言）输入中合成语音
+            avatarSynthesizer.speakSsmlAsync(spokenSsml).then((r) => {
+                console.log("speakSsmlAsync result:" + r)
+                // 检查合成是否成功完成
+                if (r.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+                    console.log("speakSsmlAsync completed!");
+                } else {
+                    // 如果合成失败，记录错误信息
+                    console.log("speakSsmlAsync failed: " + r.errorDetails);
+                    // 进一步检查失败原因是否为取消
+                    if (r.reason === SpeechSDK.ResultReason.Canceled) {
+                        var cancellationDetails = SpeechSDK.cancellationDetails.fromResult(r);
+                        consonle.log(cancellationDetails.reason)
+                        // 检查取消是否由于错误并记录错误详细信息
+                        if (cancellationDetails.reason === SpeechSDK.CancellationReason.Error) {
+                            console.error("speakSsmlAsync error: " + cancellationDetails.errorDetails)
+                        }
+                    }
+                }
+            }).catch((e) => {
+                // 捕获并记录执行promise过程中出现的任何错误
+                console.log("speakSsmlAsync failed: " + e);
+                // 在出现任何错误的情况下关闭合成器，以清理资源
+                avatarSynthesizer.close();
+            });
+        }
+
+        var chatWithAI = function (avatarSynthesizer) {
+            var chatInput = document.getElementById("chatInput");
+            var chatText = chatInput.value;
+            console.log("输入的文本：" + chatText);
+            var xhr = new XMLHttpRequest();
+            var requestURL = `http://localhost:9000/chat?query=${encodeURIComponent(chatText)}`;
+            console.log("发送请求到：" + requestURL);
+            xhr.open("POST", requestURL)
+            console.log("已发送请求，待接收响应.....")
+            xhr.addEventListener("readystatechange", function () {
+                console.log("请求状态：" + this.readyState)
+                if (this.readyState === 4) {
+                    console.log("接收到响应", this.responseText);  // 打印接收到的完整响应文本
+                    try {
+                        // 尝试解析 JSON 响应
+                        if (this.responseText) {
+                            var responseData = JSON.parse(this.responseText);
+                            console.log("AI返回的文本：" + responseData[0].msg);
+                            console.log("AI返回的情感：" + responseData[0].emotion);
+                            speakerHandel(avatarSynthesizer, responseData[0].msg, responseData[0].emotion)
+                        } else {
+                            console.error("响应为空或不是有效的 JSON 格式");
+                        }
+                    } catch (e) {
+                        console.error("解析 JSON 出错:", e);
+                        console.error("原始响应文本:", this.responseText);
+                    }
+                }
+            })
+            xhr.send();
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            var speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionkey, cogSvcRegin);
+            // 设置发音人
+            speechConfig.speechSynthesisVoiceName = "zh-CN-XiaoxiaoNeural";
+            var videoFormat = new SpeechSDK.AvatarVideoFormat();
+            var avatarConfig = new SpeechSDK.AvatarConfig(
+                "lisa",
+                "casual-sitting",
+                videoFormat
+            )
+            var xhr = new XMLHttpRequest();
+            // https://learn.microsoft.com/zh-cn/azure/ai-services/speech-service/text-to-speech-avatar/real-time-synthesis-avatar
+            xhr.open("GET", `https://${cogSvcRegin}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1`);
+            xhr.setRequestHeader("Ocp-Apim-Subscription-Key", subscriptionkey);
+            xhr.addEventListener("readystatechange", function () {
+                // this.readyState === 4 表示加载完成
+                if (this.readyState === 4) {
+                    // 创建 WebRTC 对等连接。 ICE 服务器 URL、ICE 服务器用户名和 ICE 服务器凭据都可以从上述 HTTP 请求的有效负载中提取
+                    var responseData = JSON.parse(this.responseText);
+                    var iceServerUrl = responseData.Urls[0]
+                    var iceServerUsername = responseData.Username;
+                    var iceServerCredential = responseData.Password;
+                    //创建WebRTC连接
+                    console.log("creating WebRTC connection");
+                    console.log("ice server url: " + iceServerUrl);
+                    console.log("ice server username: " + iceServerUsername);
+                    console.log("ice server credential: " + iceServerCredential);
+                    // 创建对等连接
+                    peerConnection = new RTCPeerConnection({
+                        iceServers: [{
+                            urls: iceServerUrl,
+                            username: iceServerUsername,
+                            credential: iceServerCredential
+                        }]
+                    });
+                    //抓取webtrc连接的视频和音频流
+                    peerConnection.ontrack = function (event) {
+                        if (event.track.kind === "video") {
+                            console.log("avatar video track received")
+                            var videoElement = document.createElement("video");
+                            videoElement.srcObject = event.streams[0];
+                            videoElement.autoplay = true;
+                            videoElement.id = "videoPlayer";
+                            videoElement.muted = true;
+                            videoElement.playsInline = true;
+                            document.body.appendChild(videoElement);
+                        }
+
+                        if (event.track.kind === "audio") {
+                            console.log("avatar audio track received")
+                            var audioElement = document.createElement("audio");
+                            audioElement.srcObject = event.streams[0];
+                            audioElement.autoplay = true;
+                            audioElement.id = "audioPlayer";
+                            audioElement.muted = true;
+                            document.body.appendChild(audioElement);
+                        }
+                    }
+                    //webtrc连接状态变化时的回调
+                    peerConnection.oniceconnectionstatechange = function (event) {
+                        console.log("ice connection state changed: " + peerConnection.iceConnectionState)
+                        if (peerConnection.iceConnectionState === "connected") {
+                            console.log("avatar connected")
+                        }
+                        if (peerConnection.iceConnectionState === "disconnected" || peerConnection.iceConnectionState === "failed" || peerConnection.iceConnectionState === "closed") {
+                            console.log("avatar disconnected")
+                        }
+                    }
+                    // 创建音视频流
+                    peerConnection.addTransceiver("video", { direction: "sendrecv" });
+                    peerConnection.addTransceiver("audio", { direction: "sendrecv" });
+                    // 合成
+                    var avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(speechConfig, avatarConfig);
+                    // 开始合成
+                    avatarSynthesizer.startAvatarAsync(peerConnection).then((r) => {
+                        console.log("Avatar started ID: " + r.resultId)
+                        console.log("Avatar started");
+                        //创建对话区域
+                        var chatInput = document.createElement("input");
+                        chatInput.type = "text";
+                        chatInput.placeholder = "请输入对话";
+                        chatInput.id = "chatInput";
+                        chatInput.style = "width:300px;height:50px";
+                        document.body.appendChild(chatInput);
+                        // 音色选择
+                        var voiceSelect = document.createElement("select");
+                        voiceSelect.id = "voiceSelect";
+                        voiceSelect.style = "width:100px;height:50px";
+                        voiceSelect.innerHTML = `
+                            <option value="zh-HK-HiuMaanNeural">中文粤语</option>
+                            <option value="zh-TW-HsiaoChenNeural">中文台湾</option>
+                            <option value="zh-CN-shaanxi-XiaoniNeural">中文陕西话</option>
+                            <option value="zh-CN-liaoning-XiaobeiNeural">中文东北话</option>
+                            <option value="zh-CN-XiaomoNeural" selected>中文普通话</option>
+                            <option value="th-TH-PremwadeeNeural">泰语</option>    
+                        `;
+                        document.body.appendChild(voiceSelect);
+                        // 发送按钮
+                        var sendButton = document.createElement("button");
+                        sendButton.innerHTML = "发送";
+                        sendButton.style = "width:100px;height:50px";
+                        document.body.appendChild(sendButton);
+                        // 发送按钮点击事件
+                        sendButton.addEventListener("click", function () {
+                            var videoPlayer = document.getElementById("videoPlayer");
+                            var audioPlayer = document.getElementById("audioPlayer");
+                            videoPlayer.muted = false;
+                            audioPlayer.muted = false;
+                            videoPlayer.play();
+                            audioPlayer.play();
+                            console.log("send button clicked")
+                            chatWithAI(avatarSynthesizer);
+                        })
+
+                    }).catch((e) => {
+                        console.log("avatar start failed: " + e)
+                    })
+                }
+            });
+            xhr.send();
+            // 检查是否加载了微软AI
+            if (!!window.SpeechSDK) {
+                SpeechSDK = window.SpeechSDK;
+            }
+
+        })
+    </script>
+</body>
+
+</html>
